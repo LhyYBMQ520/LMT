@@ -1,0 +1,4 @@
+# Replace with your DNS name. Caddy obtains and renews the HTTPS certificate.
+listen.example.com {
+    reverse_proxy 127.0.0.1:18080
+}

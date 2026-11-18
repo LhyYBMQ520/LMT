@@ -1,0 +1,5 @@
+# Keep Linux deployment files as LF, including Windows checkouts.
+/deploy/Caddyfile text eol=lf
+/deploy/lmt.service text eol=lf
+/deploy/nginx.conf.example text eol=lf
+/deploy/server.env.example text eol=lf

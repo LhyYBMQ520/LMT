@@ -1,0 +1,23 @@
+[Unit]
+Description=LMT room and WebRTC signaling server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/LMT-linux-amd64
+EnvironmentFile=/opt/LMT-linux-amd64/config/lmt.env
+ExecStart=/opt/LMT-linux-amd64/lmt-server
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictSUIDSGID=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

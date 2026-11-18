@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.20348.0</SupportedOSPlatformVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>AnyCPU;x64</Platforms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Lmt.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\Lmt.ico" />
+    <PackageReference Include="SIPSorcery" Version="10.0.17" />
+    <PackageReference Include="Concentus" Version="2.2.2" />
+    <!-- Keep the P/Invoke library beside the executable, including single-file publishes. -->
+    <None Remove="Native\bin\$(Configuration)\LmtCapture.dll" />
+    <None Include="Native\bin\$(Configuration)\LmtCapture.dll" Link="LmtCapture.dll" TargetPath="LmtCapture.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\licenses\*" Link="licenses\%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildNativeCapture" BeforeTargets="PrepareForBuild;ComputeResolvedFilesToPublishList" Condition="'$(DesignTimeBuild)' != 'true' and '$(OS)' == 'Windows_NT'">
+    <!-- Start the VS MSBuild host explicitly: dotnet MSBuild cannot load VC++ tasks.
+         Do not forward managed publish RID/SelfContained globals into the C++ project. -->
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-native.ps1&quot; -Configuration $(Configuration)" />
+  </Target>
+  <Target Name="CopyNativeCapture" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('Native\bin\$(Configuration)\LmtCapture.dll')" Text="缺少 C++ 捕获 DLL。请检查原生构建日志，或运行 scripts/build-native.ps1。" />
+    <Copy SourceFiles="Native\bin\$(Configuration)\LmtCapture.dll" DestinationFolder="$(TargetDir)" />
+  </Target>
+</Project>

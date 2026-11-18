@@ -1,0 +1,164 @@
+<Window x:Class="desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LMT · Listen Music Together" Height="880" Width="1080" MinWidth="900" MinHeight="780"
+        Icon="Assets/Lmt.ico"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="Microsoft YaHei UI" FontSize="13" UseLayoutRounding="True"
+        Loaded="Window_Loaded" Closing="Window_Closing">
+    <Window.Resources>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="22" />
+            <Setter Property="Margin" Value="0,0,16,16" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="150" />
+        </Grid.RowDefinitions>
+        <Grid Margin="0,0,0,24">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Image Source="{StaticResource LmtLogo}" Width="44" Height="44" Margin="0,0,12,0" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="LMT" FontSize="28" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="LISTEN MUSIC TOGETHER" FontSize="8" Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock Text="让此刻的音乐，成为共同的此刻。" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" />
+            </StackPanel>
+            <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="{StaticResource SoftSurfaceBrush}"
+                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="18" Padding="14,9" MaxWidth="430">
+                <TextBlock x:Name="ConnectionText" Text="尚未创建房间" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" />
+            </Border>
+        </Grid>
+        <ScrollViewer x:Name="MainScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,2,0">
+        <Grid MinHeight="560" Height="{Binding ViewportHeight, ElementName=MainScroll}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="1*" /></Grid.ColumnDefinitions>
+            <Border Style="{StaticResource Card}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" MinHeight="160" MaxHeight="300" /><RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel>
+                        <Grid>
+                            <TextBlock Text="01 / 音频来源" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Button x:Name="RefreshButton" Content="刷新进程" Click="Refresh_Click" HorizontalAlignment="Right" Margin="12,0,0,0" Style="{StaticResource SecondaryButton}" />
+                        </Grid>
+                        <TextBlock Text="选择音乐软件所在的进程树" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,12" />
+                        <WrapPanel>
+                            <CheckBox x:Name="ShowAllCheck" Content="显示全部进程" Checked="ProcessFilter_Changed" Unchecked="ProcessFilter_Changed" VerticalAlignment="Center" Margin="0,8,14,8" />
+                            <CheckBox x:Name="ActiveAudioCheck" Content="仅显示有音频活动的进程" Checked="ProcessFilter_Changed" Unchecked="ProcessFilter_Changed" VerticalAlignment="Center"
+                                      ToolTip="仅显示音频会话处于活动状态的进程及其父进程；点击刷新进程更新状态。" />
+                        </WrapPanel>
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Text="名称 / PID / 音频状态" Foreground="{StaticResource MutedBrush}" Margin="0,16,0,8" />
+                    <ListBox x:Name="ProcessesList" Grid.Row="2" MaxHeight="300" SelectionChanged="Process_Changed"
+                             ScrollViewer.VerticalScrollBarVisibility="Visible" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="8,9">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}" />
+                                        <TextBlock Text="{Binding AppId}" FontSize="10" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding AudioStatus}" Margin="8,0,0,0" FontSize="10" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasActiveAudio}" Value="True"><Setter Property="Foreground" Value="{StaticResource AccentBrush}" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Grid.Row="2" Text="没有符合条件的进程" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Items.Count, ElementName=ProcessesList}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                        <CheckBox Content="包含子进程（Process Loopback 进程树）" IsChecked="True" IsEnabled="False" />
+                        <TextBlock Text="此模式始终捕获所选进程及子进程。受保护音频可能无法捕获；静音时请先确认目标软件正在播放。" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                        <WrapPanel Margin="0,16,0,0">
+                            <Button x:Name="StartButton" Content="开始捕获" Click="Start_Click" />
+                            <Button x:Name="StopButton" Content="停止捕获" Click="Stop_Click" IsEnabled="False" Style="{StaticResource SecondaryButton}" />
+                        </WrapPanel>
+                        <ProgressBar x:Name="AudioMeter" Height="4" Minimum="0" Maximum="1" Margin="0,16,0,0" />
+                        <TextBlock x:Name="CaptureText" Text="捕获未开始 · 48 kHz / Stereo / 20 ms" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions><RowDefinition Height="1*" /><RowDefinition Height="1.1*" /></Grid.RowDefinitions>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="02 / 正在分享" FontSize="19" FontWeight="SemiBold" />
+                        <ComboBox x:Name="SessionsCombo" DisplayMemberPath="Label" SelectionChanged="Session_Changed" Margin="0,14,0,5" />
+                        <TextBlock x:Name="SessionHint" Text="媒体会话独立选择，未匹配时显示未知歌曲" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="100" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Border Background="{StaticResource SoftSurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                    CornerRadius="10" Width="86" Height="86" HorizontalAlignment="Left" ClipToBounds="True">
+                                <Grid>
+                                    <TextBlock Text="♫" FontSize="40" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <Image x:Name="CoverImage" Stretch="UniformToFill" />
+                                </Grid>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock x:Name="TitleText" Text="未知歌曲" FontSize="19" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="ArtistText" Text="未知艺术家" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="AlbumText" Text="未知专辑" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="PlaybackText" Text="播放状态未知" Foreground="{StaticResource AccentBrush}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,16" Background="{StaticResource SoftSurfaceBrush}">
+                    <StackPanel>
+                        <TextBlock Text="03 / 邀请一起听" FontSize="19" FontWeight="SemiBold" />
+                        <TextBox x:Name="ServerUrl" Text="http://localhost:18080" Margin="0,14,0,8" ToolTip="服务端 HTTPS 源站地址；localhost 允许 HTTP" />
+                        <PasswordBox x:Name="CreationKey" ToolTip="服务端创建密钥，可留空" />
+                        <TextBlock Text="创建密钥（服务端设置后填写，可留空）" Foreground="{StaticResource MutedBrush}" FontSize="10" Margin="0,4,0,10" />
+                        <WrapPanel>
+                            <Button x:Name="CreateButton" Content="创建房间" Click="Create_Click" />
+                            <Button x:Name="CloseRoomButton" Content="关闭房间" Click="CloseRoom_Click" IsEnabled="False" Style="{StaticResource SecondaryButton}" />
+                        </WrapPanel>
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox x:Name="GuestLink" IsReadOnly="True" />
+                            <Button x:Name="CopyButton" Grid.Column="1" Content="复制链接" Margin="8,0,0,0" Click="Copy_Click" IsEnabled="False" Style="{StaticResource SecondaryButton}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+        </ScrollViewer>
+        <Border Grid.Row="2" Background="{StaticResource SoftSurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="12" Padding="16">
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <TextBlock Text="运行日志" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8" />
+                <TextBox x:Name="LogBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         Background="Transparent" BorderThickness="0" FontFamily="Consolas" FontSize="11" Padding="0" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

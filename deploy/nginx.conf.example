@@ -1,0 +1,62 @@
+# Debian: /etc/nginx/sites-available/lmt
+# This file must be included from the http {} context (not inside another server {}).
+# Replace listen.example.com and both certificate paths before enabling the site.
+# The certificate must already exist; this configuration does not obtain/renew it.
+# Requires Nginx 1.25.1+ for the http2 directive.
+
+map $http_upgrade $lmt_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream lmt_backend {
+    server 127.0.0.1:18080;
+    server [::1]:18080;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name listen.example.com;
+
+    return 308 https://listen.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name listen.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/listen.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/listen.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:LMT_TLS:10m;
+    ssl_session_timeout 1d;
+
+    # Go serves the web app, room API, and WebSocket signaling at the same origin.
+    # Required Go settings:
+    # LMT_ADDR=127.0.0.1:18080,[::1]:18080
+    # LMT_PUBLIC_URL=https://listen.example.com
+    # LMT_BEHIND_PROXY=1
+    # LMT_WEB_DIR=/opt/LMT-linux-amd64/web
+    location / {
+        proxy_pass http://lmt_backend;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Keep the original browser Origin: Go validates it against LMT_PUBLIC_URL.
+        proxy_set_header Origin $http_origin;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $lmt_connection_upgrade;
+        proxy_buffering off;
+        proxy_connect_timeout 5s;
+        # Go sends WebSocket pings every 15 seconds, keeping this timeout alive.
+        proxy_read_timeout 90s;
+        proxy_send_timeout 90s;
+    }
+}
