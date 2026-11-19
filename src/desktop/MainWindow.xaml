@@ -45,7 +45,7 @@
             </Border>
         </Grid>
         <ScrollViewer x:Name="MainScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,2,0">
-        <Grid MinHeight="560" Height="{Binding ViewportHeight, ElementName=MainScroll}">
+        <Grid MinHeight="560">
             <Grid.ColumnDefinitions><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="1*" /></Grid.ColumnDefinitions>
             <Border Style="{StaticResource Card}">
                 <Grid>
@@ -114,7 +114,7 @@
                 </Grid>
             </Border>
             <Grid Grid.Column="1">
-                <Grid.RowDefinitions><RowDefinition Height="1*" /><RowDefinition Height="1.1*" /></Grid.RowDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                 <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="02 / 正在分享" FontSize="19" FontWeight="SemiBold" />
@@ -141,9 +141,12 @@
                 <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,16" Background="{StaticResource SoftSurfaceBrush}">
                     <StackPanel>
                         <TextBlock Text="03 / 邀请一起听" FontSize="19" FontWeight="SemiBold" />
-                        <TextBox x:Name="ServerUrl" Text="http://localhost:18080" Margin="0,14,0,8" ToolTip="服务端 HTTPS 源站地址；localhost 允许 HTTP" />
-                        <PasswordBox x:Name="CreationKey" ToolTip="服务端创建密钥，可留空" />
-                        <TextBlock Text="创建密钥（服务端设置后填写，可留空）" Foreground="{StaticResource MutedBrush}" FontSize="10" Margin="0,4,0,10" />
+                        <TextBox x:Name="ServerUrl" Text="http://localhost:18080" Margin="0,14,0,8" ToolTip="服务端 HTTPS 源站地址；localhost 允许 HTTP" TextChanged="ConnectionSettings_Changed" />
+                        <PasswordBox x:Name="CreationKey" ToolTip="服务端创建密钥，可留空" PasswordChanged="ConnectionSettings_Changed" />
+                        <TextBlock Text="创建密钥（服务端设置后填写，可留空）" Foreground="{StaticResource MutedBrush}" FontSize="10" Margin="0,4,0,0" />
+                        <CheckBox x:Name="SaveConnectionCheck" Content="保存服务器地址和创建密钥" FontSize="11" Margin="0,8,0,10"
+                                  Checked="SaveConnection_Changed" Unchecked="SaveConnection_Changed"
+                                  ToolTip="保存到 EXE 同目录的 lmt.settings.json；密钥由当前 Windows 用户加密保护。取消勾选会删除保存文件。" />
                         <WrapPanel>
                             <Button x:Name="CreateButton" Content="创建房间" Click="Create_Click" />
                             <Button x:Name="CloseRoomButton" Content="关闭房间" Click="CloseRoom_Click" IsEnabled="False" Style="{StaticResource SecondaryButton}" />

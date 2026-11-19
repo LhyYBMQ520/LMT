@@ -75,7 +75,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
         <Setter Property="SelectionBrush" Value="{StaticResource SelectionBrush}" />
-        <Setter Property="SelectionOpacity" Value="1" />
+        <Setter Property="SelectionOpacity" Value="0.4" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template" Value="{StaticResource FieldTemplate}" />
     </Style>
@@ -88,6 +88,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
         <Setter Property="SelectionBrush" Value="{StaticResource SelectionBrush}" />
+        <Setter Property="SelectionOpacity" Value="0.4" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template" Value="{StaticResource FieldTemplate}" />
     </Style>

@@ -10,4 +10,6 @@ artifacts/
 *.pfx
 *.key
 *.pem
+lmt.settings.json
+lmt.settings.json.*.tmp
 !*.example

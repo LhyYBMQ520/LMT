@@ -8,12 +8,6 @@
         "resolved": "2.2.2",
         "contentHash": "2B9YmHPKO+k7YpAAnqmiXwiMJnfjfj1C868RszOll2iZWLnGTAiC1q21L/d7CvTan7T+hyqU8dR0Dcy3cpjVfQ=="
       },
-      "Microsoft.NET.ILLink.Tasks": {
-        "type": "Direct",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "u0WnRcZgBZYHlVFpbe/3Adpmb9rmNJ8/fmEwqc/xjB7fFppq+gfaLJd3Sdaw+J02zV0eP/T9dneQ3Dv5jWw6bw=="
-      },
       "SIPSorcery": {
         "type": "Direct",
         "requested": "[10.0.17, )",
@@ -123,13 +117,6 @@
           "Microsoft.Extensions.Logging.Abstractions": "10.0.11"
         }
       },
-      "Tmds.LibC": {
-        "type": "Transitive",
-        "resolved": "0.2.0",
-        "contentHash": "+RvLuNHOLW7cxzgDe9yHLoayBgjsuH2/gJtJnuVMxweKrxxYT6TwQNAmt06SFWpjwk68aRcwwD4FfMMA6tZvVA=="
-      }
-    },
-    "net10.0-windows10.0.22621/win-x64": {
       "Tmds.LibC": {
         "type": "Transitive",
         "resolved": "0.2.0",

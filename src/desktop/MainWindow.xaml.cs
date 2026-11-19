@@ -26,10 +26,15 @@ public partial class MainWindow : Window
     private long lastSoundTicks;
     private bool silenceReported;
     private string captureLabel = "";
+    private readonly ConnectionSettingsStore connectionSettings = new();
+    private readonly DispatcherTimer settingsTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
+    private bool loadingSettings = true;
     private readonly DispatcherTimer healthTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     public MainWindow()
     {
         InitializeComponent();
+        settingsTimer.Tick += (_, _) => SaveConnectionSettings();
+        LoadConnectionSettings();
         capture.Samples += pcm =>
         {
             if (closing) return;
@@ -57,6 +62,46 @@ public partial class MainWindow : Window
             refreshingSessions = true; SessionsCombo.ItemsSource = value; SessionsCombo.SelectedItem = value.FirstOrDefault(s => s.AppId == previous?.AppId); refreshingSessions = false;
             if (SessionsCombo.SelectedItem == null) MatchSession(); else media.Select(SessionsCombo.SelectedItem as MediaChoice);
         });
+    }
+    private void LoadConnectionSettings()
+    {
+        try
+        {
+            var saved = connectionSettings.Load();
+            if (saved == null) return;
+            ServerUrl.Text = saved.ServerUrl; CreationKey.Password = saved.CreationKey; SaveConnectionCheck.IsChecked = true;
+        }
+        catch { Log("无法读取保存的连接信息。文件可能已损坏、无读取权限，或密钥属于其他 Windows 用户；请重新填写后勾选保存。"); }
+        finally { loadingSettings = false; }
+    }
+    private void ConnectionSettings_Changed(object sender, RoutedEventArgs e)
+    {
+        if (loadingSettings || closing || SaveConnectionCheck.IsChecked != true) return;
+        settingsTimer.Stop(); settingsTimer.Start();
+    }
+    private void SaveConnection_Changed(object sender, RoutedEventArgs e)
+    {
+        if (loadingSettings || closing) return;
+        settingsTimer.Stop();
+        if (SaveConnectionCheck.IsChecked == true) SaveConnectionSettings();
+        else
+        {
+            try { connectionSettings.Delete(); Log("已取消保存并删除本地连接信息。"); }
+            catch
+            {
+                loadingSettings = true;
+                SaveConnectionCheck.IsChecked = true;
+                loadingSettings = false;
+                Log("删除保存文件失败，已恢复保存勾选状态。请检查 EXE 目录权限，或手动删除 lmt.settings.json。");
+            }
+        }
+    }
+    private void SaveConnectionSettings()
+    {
+        settingsTimer.Stop();
+        if (SaveConnectionCheck.IsChecked != true) return;
+        try { connectionSettings.Save(ServerUrl.Text, CreationKey.Password); }
+        catch { Log("保存连接信息失败。请确认 EXE 所在目录可写，且 lmt.settings.json 未被占用；本次输入仍可用于创建房间。"); }
     }
     private void Log(string text)
     {
@@ -178,6 +223,7 @@ public partial class MainWindow : Window
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (allowClose) return; e.Cancel = true; if (closing) return;
+        if (settingsTimer.IsEnabled) SaveConnectionSettings();
         closing = true;
         healthTimer.Stop(); Hide();
         // Let the original Closing event unwind even when cleanup completes synchronously.

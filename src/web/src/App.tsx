@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { describeIcePath } from './icePath';
 import type { IcePath } from './icePath';
+import { bindMediaSession, requestPlaybackSession } from './mediaSession';
+import type { AudioNavigator } from './mediaSession';
 
 type Song = { title: string; artist: string; album: string; playbackStatus: string; cover: string };
 type Phase = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
@@ -45,6 +47,11 @@ export default function App() {
   const peer = useRef<RTCPeerConnection | null>(null);
   const generation = useRef(0);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const wantsPlayback = useRef(false);
+  const canRecover = useRef(false);
+  const lastRecovery = useRef(0);
+  const recoverPlayback = useRef<() => void>(() => {});
+  const mediaControls = useRef<ReturnType<typeof bindMediaSession> | null>(null);
   const stop = () => {
     generation.current++;
     timers.current.forEach(clearTimeout); timers.current = [];
@@ -61,7 +68,7 @@ export default function App() {
     let disposed = false;
     let pending = false;
     const update = () => {
-      const pc = peer.current; if (!pc) return;
+      const pc = peer.current; if (!pc || document.visibilityState === 'hidden') return;
       if (pending) return;
       pending = true;
       void pc.getStats().then(stats => {
@@ -78,22 +85,34 @@ export default function App() {
     return () => { disposed = true; clearInterval(interval); };
   }, [phase]);
 
-  const start = () => {
+  const playLocal = () => {
+    const element = audio.current; if (!element || !wantsPlayback.current) return;
+    try { if ((navigator as AudioNavigator).audioSession?.state === 'interrupted') return; } catch { /* Optional API. */ }
+    requestPlaybackSession();
+    const gen = generation.current;
+    void element.play().then(() => { if (gen === generation.current) setAudioError(''); })
+      .catch(() => { if (gen === generation.current) setAudioError('浏览器已暂停播放，请点击「播放声音」继续收听。'); });
+  };
+  const pauseLocal = () => { wantsPlayback.current = false; audio.current?.pause(); };
+  const start = (resumePlayback = true) => {
     if (!validInvite) { setError('邀请链接不完整，请向房主索取包含访问令牌的完整链接。'); return; }
     if (!window.RTCPeerConnection || !window.isSecureContext) { setError('此浏览器无法建立安全音频连接。请使用 HTTPS，并更新浏览器。'); return; }
     stop(); const gen = generation.current;
+    wantsPlayback.current = resumePlayback; canRecover.current = true;
+    if (resumePlayback) requestPlaybackSession();
     setError(''); setAudioError(''); setSong(unknown); setFailedCover(''); setExpiry(''); setNetwork('正在连接'); setPhase('connecting');
     // The user gesture initiates playback. ontrack retries; blocked browsers get an explicit button.
-    if (audio.current) { audio.current.srcObject = new MediaStream(); void audio.current.play().catch(() => {}); }
+    if (audio.current) { audio.current.srcObject = new MediaStream(); if (resumePlayback) void audio.current.play().catch(() => {}); }
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/rooms/${roomId}/ws`);
     socket.current = ws;
     const live = () => generation.current === gen && socket.current === ws;
     const send = (type: string, payload: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type, payload })); };
     const connectionTimer = setTimeout(() => { if (live() && ws.readyState !== WebSocket.OPEN) { stop(); setPhase('error'); setError('服务器连接超时，请检查网络后重新连接。'); } }, 12000);
+    let audioConnectionTimer: ReturnType<typeof setTimeout> | undefined;
     timers.current.push(connectionTimer);
     let pendingIce: RTCIceCandidateInit[] = [];
     let chain = Promise.resolve();
-    ws.onopen = () => { if (live()) ws.send(JSON.stringify({ type: 'auth', role: 'guest', token })); };
+    ws.onopen = () => { if (live()) { clearTimeout(connectionTimer); ws.send(JSON.stringify({ type: 'auth', role: 'guest', token })); } };
     ws.onmessage = event => {
       chain = chain.then(async () => {
         if (!live()) return;
@@ -113,14 +132,15 @@ export default function App() {
             pc.oniceconnectionstatechange = updateIceState;
             setIcePath({ summary: 'ICE 检查中', detail: '正在收集候选并检查可用路径。' });
             pc.onicecandidate = event => { if (live() && event.candidate) send('ice', event.candidate.toJSON()); };
-            pc.ontrack = event => { if (!live() || !audio.current) return; audio.current.srcObject = event.streams[0] ?? new MediaStream([event.track]); void audio.current.play().then(() => { if(live())setAudioError(''); }).catch(() => { if(live())setAudioError('浏览器已暂停自动播放，请点击「播放声音」。'); }); };
+            pc.ontrack = event => { if (!live() || !audio.current) return; audio.current.srcObject = event.streams[0] ?? new MediaStream([event.track]); playLocal(); };
             pc.onconnectionstatechange = () => {
               if (!live()) return;
-              if (pc.connectionState === 'connected') { setPhase('connected'); setNetwork('连接正常'); setError(''); }
+              if (pc.connectionState === 'connected') { clearTimeout(audioConnectionTimer); setPhase('connected'); setNetwork('连接正常'); setError(''); }
               else if (pc.connectionState === 'failed') { setPhase('error'); setIcePath({ summary: 'WebRTC 连接失败', detail: 'ICE 或 DTLS 连接失败，当前没有可用的音频路径。' }); setError('音频连接失败。请重连；跨网络仍失败时，房主需要检查 TURN 配置。'); audio.current?.pause(); }
               else if (pc.connectionState === 'disconnected') { setNetwork('连接中断'); setIcePath({ summary: 'WebRTC 连接中断', detail: '等待网络恢复后重新确认选中的 ICE 路径。' }); setError('音频连接中断，正在等待网络恢复，也可以点击重新连接。'); }
             };
-            timers.current.push(setTimeout(() => { if (live() && pc.connectionState !== 'connected') { setPhase('error'); setError('音频连接超时。请重新连接，或请房主检查 TURN 配置。'); } }, 30000));
+            audioConnectionTimer = setTimeout(() => { if (live() && pc.connectionState !== 'connected') { setPhase('error'); setError('音频连接超时。请重新连接，或请房主检查 TURN 配置。'); } }, 30000);
+            timers.current.push(audioConnectionTimer);
             break;
           }
           case 'offer': {
@@ -136,9 +156,56 @@ export default function App() {
       }).catch((e: unknown) => { if(live()){setPhase('error');setError(`音频连接失败：${e instanceof Error ? e.message : '无法处理信令'}`);} });
     };
     ws.onerror = () => { if (live()) setError('无法连接房间，请检查链接、服务器和网络。'); };
-    ws.onclose = event => { if (!live()) return; stop(); setPhase(event.code === 4000 ? 'closed' : 'error'); setNetwork('已断开'); setError(event.reason || '房间连接已断开。房主离线或房间过期后，原链接会失效。'); };
+    ws.onclose = event => { if (!live()) return; if (event.code === 4000 || event.code === 4003) canRecover.current = false; stop(); setPhase(event.code === 4000 ? 'closed' : 'error'); setNetwork('已断开'); setError(event.reason || '房间连接已断开。房主离线或房间过期后，原链接会失效。'); };
   };
-  const togglePlayback = () => { const element = audio.current; if (!element) return; if (playing) element.pause(); else void element.play().then(() => setAudioError('')).catch(() => setAudioError('暂时没有可播放的音频，请等待房主开始分享或重新连接。')); };
+  const togglePlayback = () => { if (playing) pauseLocal(); else { wantsPlayback.current = true; playLocal(); } };
+  useEffect(() => {
+    if (phase !== 'connected') return;
+    const controls = bindMediaSession({
+      play: () => { wantsPlayback.current = true; if (peer.current?.connectionState === 'connected') playLocal(); else recoverPlayback.current(); },
+      pause: pauseLocal,
+      stop: () => { canRecover.current = false; wantsPlayback.current = false; stop(); setPhase('idle'); setNetwork('已停止收听'); },
+    });
+    mediaControls.current = controls;
+    return () => { controls.dispose(); if (mediaControls.current === controls) mediaControls.current = null; };
+  }, [phase]);
+  useEffect(() => {
+    mediaControls.current?.update({ ...song, cover: song.cover === failedCover ? '' : song.cover }, playing);
+  }, [phase, song, playing, failedCover]);
+  useEffect(() => {
+    recoverPlayback.current = () => {
+      if (document.visibilityState === 'hidden' || !navigator.onLine || !canRecover.current || !wantsPlayback.current) return;
+      const pc = peer.current, ws = socket.current;
+      if (pc?.connectionState === 'connected' && ws?.readyState === WebSocket.OPEN) {
+        if (audio.current?.paused) playLocal();
+        return;
+      }
+      if (phase === 'connecting' || phase === 'closed' || Date.now() - lastRecovery.current < 4000) return;
+      lastRecovery.current = Date.now(); start(true);
+    };
+  });
+  useEffect(() => {
+    let probes: ReturnType<typeof setTimeout>[] = [];
+    const recover = () => {
+      probes.forEach(clearTimeout); probes = [];
+      if (document.visibilityState === 'hidden') return;
+      recoverPlayback.current();
+      // Resumed pages may receive stale connection states before queued close/failure events.
+      // Check only during this short recovery window, without a background reconnect loop.
+      probes = [1500, 5000].map(delay => setTimeout(() => recoverPlayback.current(), delay));
+    };
+    document.addEventListener('visibilitychange', recover);
+    document.addEventListener('resume', recover);
+    window.addEventListener('pageshow', recover);
+    window.addEventListener('online', recover);
+    return () => {
+      document.removeEventListener('visibilitychange', recover);
+      document.removeEventListener('resume', recover);
+      window.removeEventListener('pageshow', recover);
+      window.removeEventListener('online', recover);
+      probes.forEach(clearTimeout);
+    };
+  }, []);
   const phaseLabel = { idle: '等待你加入', connecting: '正在连接房间', connected: '已连接房间', closed: '房间已关闭', error: '连接不可用' }[phase];
   const listening = playing && active && phase === 'connected';
   const actionLabel = phase === 'connecting' ? '正在连接…' : phase === 'connected' ? playing ? '暂停收听' : '播放声音' : phase === 'closed' ? '房间已关闭' : '开始收听';
@@ -162,8 +229,8 @@ export default function App() {
           {!isRoom && <p className="empty-room">尚未收到邀请链接</p>}
           {isRoom && !validInvite && <div className="notice error" role="alert">邀请链接不完整。请向房主索取完整链接。</div>}
           {error && <div className="notice error" role="alert">{error}</div>}
-          <div className="listening-actions"><button className="primary-button" onClick={phase === 'connected' ? togglePlayback : start} disabled={!validInvite || phase === 'connecting' || phase === 'closed'}><Icon name={phase === 'connected' ? playing ? 'pause' : 'play' : 'headphones'} /><span>{actionLabel}</span></button>
-          {(phase === 'connected' || phase === 'error' || phase === 'connecting') && <button className="reconnect-button" onClick={start} aria-label="重新连接" title="重新连接"><Icon name="refresh" size={19} /></button>}</div>
+          <div className="listening-actions"><button className="primary-button" onClick={phase === 'connected' ? togglePlayback : () => start()} disabled={!validInvite || phase === 'connecting' || phase === 'closed'}><Icon name={phase === 'connected' ? playing ? 'pause' : 'play' : 'headphones'} /><span>{actionLabel}</span></button>
+          {(phase === 'connected' || phase === 'error' || phase === 'connecting') && <button className="reconnect-button" onClick={() => start()} aria-label="重新连接" title="重新连接"><Icon name="refresh" size={19} /></button>}</div>
           <div className="room-details"><div><span>房间</span><strong>{roomId ? `# ${roomId.slice(0, 8)}` : '等待邀请'}</strong></div><div><span>人数上限</span><strong>房主 + 1 位听众</strong></div><div><span>音频连接</span><strong>{network}</strong></div><div><span>有效期至</span><strong>{expiry || '—'}</strong></div></div>
           <details className="ice-path"><summary><span>ICE 路径</span><strong>{icePath.summary}</strong></summary><p>{icePath.detail}</p></details>
           {(audioError || captureError) && <div className="notice" role="status">{audioError || captureError}</div>}
