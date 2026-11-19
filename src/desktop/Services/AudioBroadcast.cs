@@ -23,10 +23,33 @@ public sealed class AudioBroadcast : IAsyncDisposable
     private readonly List<RTCIceCandidateInit> pendingIce=[];
     private bool remoteSet;
     private readonly Task audioTask;
+    private readonly Task pathTask;
+    private IceConnectionPath lastPath = IceConnectionPath.Waiting("等待访客连接");
     public event Action<string>? Status;
+    public event Action<IceConnectionPath>? PathChanged;
     public event Action<string>? Failed;
     public event Action<double>? Level;
-    public AudioBroadcast(RoomConnection room){this.room=room;room.Message+=HandleMessageAsync;audioTask=Task.Run(AudioLoopAsync);}
+    public AudioBroadcast(RoomConnection room){this.room=room;room.Message+=HandleMessageAsync;audioTask=Task.Run(AudioLoopAsync);pathTask=Task.Run(PathLoopAsync);}
+    private void UpdatePath()
+    {
+        lock(gate)
+        {
+            IceConnectionPath path;
+            try { path = peer == null ? IceConnectionPath.Waiting("等待访客连接") : IceConnectionPath.Read(peer); }
+            catch { path = IceConnectionPath.Waiting("ICE 路径信息暂不可用"); }
+            if(path == lastPath)return;
+            lastPath=path;PathChanged?.Invoke(path);
+        }
+    }
+    private async Task PathLoopAsync()
+    {
+        try
+        {
+            using var timer=new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while(await timer.WaitForNextTickAsync(cancel.Token))UpdatePath();
+        }
+        catch(OperationCanceledException) { }
+    }
     public void SetCapturing(bool active,string error="")
     {
         lock(gate){capturing=active;used=0;while(frames.Reader.TryRead(out _)){};}
@@ -69,6 +92,7 @@ public sealed class AudioBroadcast : IAsyncDisposable
                     ClosePeer();guestId=id;remoteSet=false;pendingIce.Clear();
                     var pc=new RTCPeerConnection(new RTCConfiguration{iceServers=iceServers});
                     lock(gate)peer=pc;
+                    pc.oniceconnectionstatechange+=_=>{if(guestId==id)UpdatePath();};
                     pc.addTrack(new MediaStreamTrack(new AudioFormat(111,"opus",48000,2,"minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1"),MediaStreamStatusEnum.SendOnly));
                     pc.onicecandidate+=candidate=>{if(candidate!=null&&room.Connected&&guestId==id)try{using var json=JsonDocument.Parse(candidate.toJSON());room.Send("ice",json.RootElement.Clone(),id);}catch(Exception ex){Failed?.Invoke(ex.Message);}};
                     pc.onconnectionstatechange+=state=>{if(guestId==id)Status?.Invoke(state switch{RTCPeerConnectionState.connected=>"访客已连接 · Opus 48 kHz",RTCPeerConnectionState.failed=>"WebRTC 连接失败，请检查网络或配置 TURN",RTCPeerConnectionState.disconnected=>"访客音频连接中断，可在网页重新连接",_=>"WebRTC："+state});};
@@ -86,6 +110,6 @@ public sealed class AudioBroadcast : IAsyncDisposable
             }
         }catch(Exception ex){Failed?.Invoke("WebRTC 信令失败："+ex.Message);}finally{negotiation.Release();}
     }
-    private void ClosePeer(){lock(gate){guestId=null;peer?.Close("guest disconnected");peer?.Dispose();peer=null;remoteSet=false;pendingIce.Clear();}}
-    public async ValueTask DisposeAsync(){room.Message-=HandleMessageAsync;cancel.Cancel();try{await audioTask;}catch{}await negotiation.WaitAsync();try{ClosePeer();}finally{negotiation.Release();}cancel.Dispose();negotiation.Dispose();}
+    private void ClosePeer(){lock(gate){guestId=null;peer?.Close("guest disconnected");peer?.Dispose();peer=null;remoteSet=false;pendingIce.Clear();UpdatePath();}}
+    public async ValueTask DisposeAsync(){room.Message-=HandleMessageAsync;cancel.Cancel();try{await Task.WhenAll(audioTask,pathTask);}catch{}await negotiation.WaitAsync();try{ClosePeer();}finally{negotiation.Release();}cancel.Dispose();negotiation.Dispose();}
 }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { describeIcePath } from './icePath';
+import type { IcePath } from './icePath';
 
 type Song = { title: string; artist: string; album: string; playbackStatus: string; cover: string };
 type Phase = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
@@ -37,6 +39,7 @@ export default function App() {
   const [failedCover, setFailedCover] = useState('');
   const [expiry, setExpiry] = useState('');
   const [network, setNetwork] = useState('等待连接');
+  const [icePath, setIcePath] = useState<IcePath>({ summary: '尚未连接', detail: '连接后显示实际选中的 ICE 路径。' });
   const audio = useRef<HTMLAudioElement>(null);
   const socket = useRef<WebSocket | null>(null);
   const peer = useRef<RTCPeerConnection | null>(null);
@@ -49,19 +52,29 @@ export default function App() {
     const pc = peer.current; peer.current = null; pc?.close();
     if (audio.current) { audio.current.pause(); audio.current.srcObject = null; }
     setPlaying(false); setActive(false); setCaptureError('');
+    setIcePath({ summary: '尚未连接', detail: '连接后显示实际选中的 ICE 路径。' });
   };
   useEffect(() => () => { stop(); }, []);
   useEffect(() => { if (audio.current) { audio.current.volume = volume / 100; audio.current.disableRemotePlayback = true; } }, [volume]);
   useEffect(() => {
-    if (phase !== 'connected') return;
+    if (phase !== 'connected' && phase !== 'connecting') return;
     let disposed = false;
-    const interval = setInterval(() => {
+    let pending = false;
+    const update = () => {
       const pc = peer.current; if (!pc) return;
+      if (pending) return;
+      pending = true;
       void pc.getStats().then(stats => {
         if (disposed || pc !== peer.current) return;
-        stats.forEach(report => { if (report.type === 'inbound-rtp' && report.kind === 'audio') setNetwork(`抖动 ${Math.round((report.jitter ?? 0) * 1000)} ms`); });
-      }).catch(() => {});
-    }, 2500);
+        if ((pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') && pc.connectionState === 'connected') {
+          setIcePath(describeIcePath(stats));
+          stats.forEach(report => { if (report.type === 'inbound-rtp' && report.kind === 'audio') setNetwork(`抖动 ${Math.round((report.jitter ?? 0) * 1000)} ms`); });
+        }
+      }).catch(() => { if (!disposed && pc === peer.current && pc.connectionState === 'connected') setIcePath({ summary: 'ICE 路径信息暂不可用', detail: '浏览器未能提供连接统计，音频仍可正常传输。' }); })
+        .finally(() => { pending = false; });
+    };
+    update();
+    const interval = setInterval(update, 2500);
     return () => { disposed = true; clearInterval(interval); };
   }, [phase]);
 
@@ -90,13 +103,22 @@ export default function App() {
             const data = message.payload as { iceServers: RTCIceServer[]; expiresAt: string };
             setExpiry(new Date(data.expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
             const pc = new RTCPeerConnection({ iceServers: data.iceServers }); peer.current = pc;
+            const updateIceState = () => {
+              if (!live() || peer.current !== pc) return;
+              const state = pc.iceConnectionState;
+              const labels: Record<string, string> = { new: '等待 ICE 连接', checking: 'ICE 检查中', disconnected: 'ICE 连接中断', failed: 'ICE 连接失败', closed: 'ICE 已关闭' };
+              const summary = labels[state];
+              if (summary) setIcePath({ summary, detail: '当前没有可确认的活动 ICE 路径。' });
+            };
+            pc.oniceconnectionstatechange = updateIceState;
+            setIcePath({ summary: 'ICE 检查中', detail: '正在收集候选并检查可用路径。' });
             pc.onicecandidate = event => { if (live() && event.candidate) send('ice', event.candidate.toJSON()); };
             pc.ontrack = event => { if (!live() || !audio.current) return; audio.current.srcObject = event.streams[0] ?? new MediaStream([event.track]); void audio.current.play().then(() => { if(live())setAudioError(''); }).catch(() => { if(live())setAudioError('浏览器已暂停自动播放，请点击「播放声音」。'); }); };
             pc.onconnectionstatechange = () => {
               if (!live()) return;
               if (pc.connectionState === 'connected') { setPhase('connected'); setNetwork('连接正常'); setError(''); }
-              else if (pc.connectionState === 'failed') { setPhase('error'); setError('音频直连失败。请重连；跨网络仍失败时，房主需要配置 TURN 中继。'); audio.current?.pause(); }
-              else if (pc.connectionState === 'disconnected') { setNetwork('连接中断'); setError('音频连接中断，正在等待网络恢复，也可以点击重新连接。'); }
+              else if (pc.connectionState === 'failed') { setPhase('error'); setIcePath({ summary: 'WebRTC 连接失败', detail: 'ICE 或 DTLS 连接失败，当前没有可用的音频路径。' }); setError('音频连接失败。请重连；跨网络仍失败时，房主需要检查 TURN 配置。'); audio.current?.pause(); }
+              else if (pc.connectionState === 'disconnected') { setNetwork('连接中断'); setIcePath({ summary: 'WebRTC 连接中断', detail: '等待网络恢复后重新确认选中的 ICE 路径。' }); setError('音频连接中断，正在等待网络恢复，也可以点击重新连接。'); }
             };
             timers.current.push(setTimeout(() => { if (live() && pc.connectionState !== 'connected') { setPhase('error'); setError('音频连接超时。请重新连接，或请房主检查 TURN 配置。'); } }, 30000));
             break;
@@ -143,6 +165,7 @@ export default function App() {
           <div className="listening-actions"><button className="primary-button" onClick={phase === 'connected' ? togglePlayback : start} disabled={!validInvite || phase === 'connecting' || phase === 'closed'}><Icon name={phase === 'connected' ? playing ? 'pause' : 'play' : 'headphones'} /><span>{actionLabel}</span></button>
           {(phase === 'connected' || phase === 'error' || phase === 'connecting') && <button className="reconnect-button" onClick={start} aria-label="重新连接" title="重新连接"><Icon name="refresh" size={19} /></button>}</div>
           <div className="room-details"><div><span>房间</span><strong>{roomId ? `# ${roomId.slice(0, 8)}` : '等待邀请'}</strong></div><div><span>人数上限</span><strong>房主 + 1 位听众</strong></div><div><span>音频连接</span><strong>{network}</strong></div><div><span>有效期至</span><strong>{expiry || '—'}</strong></div></div>
+          <details className="ice-path"><summary><span>ICE 路径</span><strong>{icePath.summary}</strong></summary><p>{icePath.detail}</p></details>
           {(audioError || captureError) && <div className="notice" role="status">{audioError || captureError}</div>}
         </div><p className="privacy-note"><Icon name="shield" size={16} /><span>实时收听 · 不保存音频和歌曲历史</span></p></aside>
       </section>

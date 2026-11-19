@@ -97,6 +97,12 @@ audio[hidden] { display: none; }
 .room-details { border-top: 1px solid #d5dcc7; padding-top: 16px; display: grid; gap: 14px; }
 .room-details > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); }
 .room-details strong { min-width: 0; font-weight: 500; color: #526449; text-align: right; overflow-wrap: anywhere; }
+.ice-path { margin-top: 12px; color: var(--muted); font-size: 11px; }
+.ice-path summary { cursor: pointer; min-height: 32px; line-height: 1.6; overflow-wrap: anywhere; }
+.ice-path summary > span { margin-right: 8px; }
+.ice-path strong { font-weight: 500; color: #526449; }
+.ice-path p { white-space: pre-line; line-height: 1.7; overflow-wrap: anywhere; margin: 6px 0 0; }
+.ice-path summary:focus-visible { outline: 2px solid #7f9b58; outline-offset: 3px; }
 .privacy-note { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 11px; line-height: 1.5; color: #758369; }
 .notice { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; padding: 9px 10px; border: 1px solid #d1d9c4; border-radius: 5px; margin: 12px 0 0; background: #f2f4e9; color: #596d48; }
 .notice.error { background: #f5ebe0; border-color: #e3d2be; color: #8c6345; }
@@ -155,6 +161,7 @@ footer { border-top: 1px solid var(--line); min-height: 44px; display: flex; ali
   .reconnect-button { width: 44px; height: 44px; }
   .room-details { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; padding-top: 10px; }
   .room-details > div { font-size: 10px; gap: 6px; }
+  .ice-path { margin-top: 6px; font-size: 10px; }
   .privacy-note { font-size: 10px; }
   .privacy-note > svg { width: 14px; height: 14px; }
   footer { min-height: 36px; font-size: 10px; margin-top: auto; gap: 8px; }
@@ -181,14 +188,18 @@ footer { border-top: 1px solid var(--line); min-height: 44px; display: flex; ali
 }
 
 @media (max-width: 760px) and (max-height: 650px) {
-  main { padding-top: 8px; padding-bottom: 8px; }
+  header { min-height: 50px; }
+  main { padding-top: 4px; padding-bottom: 4px; }
+  .intro { margin-bottom: 8px; }
   .intro > p { display: none; }
   .player-card { padding-top: 12px; padding-bottom: 4px; }
-  .now-playing { min-height: 124px; }
-  .record-area { height: 108px; }
+  .now-playing { min-height: 112px; }
+  .record-area { height: 96px; }
   .local-player { min-height: 26px; }
-  .room-sidebar { padding-top: 12px; padding-bottom: 12px; gap: 8px; }
-  .listening-actions { margin-top: 10px; margin-bottom: 10px; }
+  .room-sidebar { padding-top: 10px; padding-bottom: 10px; gap: 8px; }
+  .room-details { row-gap: 4px; padding-top: 8px; }
+  footer { min-height: 24px; }
+  .listening-actions { margin-top: 8px; margin-bottom: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

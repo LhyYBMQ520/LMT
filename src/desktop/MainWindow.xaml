@@ -35,7 +35,13 @@
             </StackPanel>
             <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="{StaticResource SoftSurfaceBrush}"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="18" Padding="14,9" MaxWidth="430">
-                <TextBlock x:Name="ConnectionText" Text="尚未创建房间" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" />
+                <StackPanel>
+                    <TextBlock x:Name="ConnectionText" Text="尚未创建房间" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="IcePathText" Text="ICE：尚未连接" FontSize="11" Margin="0,5,0,0"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" ToolTipService.ShowDuration="30000">
+                        <TextBlock.ToolTip><ToolTip MaxWidth="460"><TextBlock x:Name="IcePathDetail" Text="连接后显示实际选中的 ICE 路径。" TextWrapping="Wrap" /></ToolTip></TextBlock.ToolTip>
+                    </TextBlock>
+                </StackPanel>
             </Border>
         </Grid>
         <ScrollViewer x:Name="MainScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,2,0">

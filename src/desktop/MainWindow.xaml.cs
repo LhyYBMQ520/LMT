@@ -141,7 +141,14 @@ public partial class MainWindow : Window
         {
             var connection = new RoomConnection(); room = connection;
             broadcast = new AudioBroadcast(connection);
-            broadcast.Status += text => _ = Dispatcher.InvokeAsync(() => { if (!closing) ConnectionText.Text = text; });
+            var currentBroadcast = broadcast;
+            IcePathText.Text = "ICE：等待访客连接";
+            broadcast.Status += text => _ = Dispatcher.InvokeAsync(() => { if (!closing && broadcast == currentBroadcast) ConnectionText.Text = text; });
+            broadcast.PathChanged += path => _ = Dispatcher.InvokeAsync(() =>
+            {
+                if (closing || broadcast != currentBroadcast) return;
+                IcePathText.Text = "ICE：" + path.Summary; IcePathDetail.Text = path.Detail;
+            });
             broadcast.Failed += Log;
             connection.Closed += error => _ = Dispatcher.InvokeAsync(async () => { if (closing || room != connection) return; Log(error); ConnectionText.Text = error; await CloseRoomAsync(); });
             await connection.ConnectAsync(ServerUrl.Text, CreationKey.Password);
@@ -155,6 +162,7 @@ public partial class MainWindow : Window
     private async Task CloseRoomAsync()
     {
         var oldRoom = room; var oldBroadcast = broadcast; room = null; broadcast = null;
+        if (!closing) { IcePathText.Text = "ICE：尚未连接"; IcePathDetail.Text = "连接后显示实际选中的 ICE 路径。"; }
         // Peer disposal can block; keep it off the dispatcher and finish signaling first.
         var cleanup = Task.Run(async () =>
         {
