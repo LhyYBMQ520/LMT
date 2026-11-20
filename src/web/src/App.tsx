@@ -4,6 +4,7 @@ import { describeIcePath } from './icePath';
 import type { IcePath } from './icePath';
 import { bindMediaSession, requestPlaybackSession } from './mediaSession';
 import type { AudioNavigator } from './mediaSession';
+import { createMediaSessionAnchor } from './mediaSessionAnchor';
 
 type Song = { title: string; artist: string; album: string; playbackStatus: string; cover: string };
 type Phase = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
@@ -15,7 +16,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     play: <path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none" />,
     pause: <><path d="M8 5v14M16 5v14" strokeWidth="4" /></>,
     volume: <><path d="m11 5-6 4H2v6h3l6 4Z" /><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /></>,
-    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 18 17" /></>,
+    refresh: <><path d="M21 8h-5m5 0V3m0 5-2.64-2.64A9 9 0 0 0 3 12" /><path d="M3 16h5m-5 0v5m0-5 2.64 2.64A9 9 0 0 0 21 12" /></>,
     arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
     headphones: <><path d="M4 14v-3a8 8 0 0 1 16 0v3" /><rect x="3" y="12" width="4" height="8" rx="2" /><rect x="17" y="12" width="4" height="8" rx="2" /></>,
     shield: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z" /><path d="m8 12 3 3 5-6" /></>,
@@ -34,6 +35,7 @@ export default function App() {
   const [song, setSong] = useState<Song>(unknown);
   const [error, setError] = useState('');
   const [audioError, setAudioError] = useState('');
+  const [mediaError, setMediaError] = useState('');
   const [captureError, setCaptureError] = useState('');
   const [active, setActive] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -52,11 +54,13 @@ export default function App() {
   const lastRecovery = useRef(0);
   const recoverPlayback = useRef<() => void>(() => {});
   const mediaControls = useRef<ReturnType<typeof bindMediaSession> | null>(null);
+  const mediaAnchor = useRef<ReturnType<typeof createMediaSessionAnchor> | null>(null);
   const stop = () => {
     generation.current++;
     timers.current.forEach(clearTimeout); timers.current = [];
     const ws = socket.current; socket.current = null; if (ws) { ws.onclose = null; ws.close(); }
     const pc = peer.current; peer.current = null; pc?.close();
+    mediaAnchor.current?.dispose(); mediaAnchor.current = null;
     if (audio.current) { audio.current.pause(); audio.current.srcObject = null; }
     setPlaying(false); setActive(false); setCaptureError('');
     setIcePath({ summary: '尚未连接', detail: '连接后显示实际选中的 ICE 路径。' });
@@ -90,17 +94,29 @@ export default function App() {
     try { if ((navigator as AudioNavigator).audioSession?.state === 'interrupted') return; } catch { /* Optional API. */ }
     requestPlaybackSession();
     const gen = generation.current;
+    playMediaAnchor();
     void element.play().then(() => { if (gen === generation.current) setAudioError(''); })
-      .catch(() => { if (gen === generation.current) setAudioError('浏览器已暂停播放，请点击「播放声音」继续收听。'); });
+      .catch(() => { if (gen === generation.current) { mediaAnchor.current?.pause(); setAudioError('浏览器已暂停播放，请点击「播放声音」继续收听。'); } });
   };
-  const pauseLocal = () => { wantsPlayback.current = false; audio.current?.pause(); };
+  const pauseLocal = () => { wantsPlayback.current = false; mediaAnchor.current?.pause(); audio.current?.pause(); };
+  const playMediaAnchor = () => {
+    if (!navigator.mediaSession) return;
+    const gen = generation.current;
+    try {
+      mediaAnchor.current ??= createMediaSessionAnchor(pauseLocal);
+      void mediaAnchor.current.play().then(() => { if (gen === generation.current) setMediaError(''); })
+        .catch(() => { if (gen === generation.current) setMediaError('系统媒体控件未能启动，可暂停后再点击播放重试；网页声音仍可收听。'); });
+    } catch { setMediaError('当前浏览器无法启用系统媒体控件，网页声音仍可收听。'); }
+  };
   const start = (resumePlayback = true) => {
     if (!validInvite) { setError('邀请链接不完整，请向房主索取包含访问令牌的完整链接。'); return; }
     if (!window.RTCPeerConnection || !window.isSecureContext) { setError('此浏览器无法建立安全音频连接。请使用 HTTPS，并更新浏览器。'); return; }
     stop(); const gen = generation.current;
     wantsPlayback.current = resumePlayback; canRecover.current = true;
     if (resumePlayback) requestPlaybackSession();
-    setError(''); setAudioError(''); setSong(unknown); setFailedCover(''); setExpiry(''); setNetwork('正在连接'); setPhase('connecting');
+    setError(''); setAudioError(''); setMediaError(''); setSong(unknown); setFailedCover(''); setExpiry(''); setNetwork('正在连接'); setPhase('connecting');
+    // Start the normal media player inside the same user gesture as joining.
+    if (resumePlayback) playMediaAnchor();
     // The user gesture initiates playback. ontrack retries; blocked browsers get an explicit button.
     if (audio.current) { audio.current.srcObject = new MediaStream(); if (resumePlayback) void audio.current.play().catch(() => {}); }
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/rooms/${roomId}/ws`);
@@ -136,7 +152,7 @@ export default function App() {
             pc.onconnectionstatechange = () => {
               if (!live()) return;
               if (pc.connectionState === 'connected') { clearTimeout(audioConnectionTimer); setPhase('connected'); setNetwork('连接正常'); setError(''); }
-              else if (pc.connectionState === 'failed') { setPhase('error'); setIcePath({ summary: 'WebRTC 连接失败', detail: 'ICE 或 DTLS 连接失败，当前没有可用的音频路径。' }); setError('音频连接失败。请重连；跨网络仍失败时，房主需要检查 TURN 配置。'); audio.current?.pause(); }
+              else if (pc.connectionState === 'failed') { setPhase('error'); setIcePath({ summary: 'WebRTC 连接失败', detail: 'ICE 或 DTLS 连接失败，当前没有可用的音频路径。' }); setError('音频连接失败。请重连；跨网络仍失败时，房主需要检查 TURN 配置。'); mediaAnchor.current?.pause(); audio.current?.pause(); }
               else if (pc.connectionState === 'disconnected') { setNetwork('连接中断'); setIcePath({ summary: 'WebRTC 连接中断', detail: '等待网络恢复后重新确认选中的 ICE 路径。' }); setError('音频连接中断，正在等待网络恢复，也可以点击重新连接。'); }
             };
             audioConnectionTimer = setTimeout(() => { if (live() && pc.connectionState !== 'connected') { setPhase('error'); setError('音频连接超时。请重新连接，或请房主检查 TURN 配置。'); } }, 30000);
@@ -160,6 +176,7 @@ export default function App() {
   };
   const togglePlayback = () => { if (playing) pauseLocal(); else { wantsPlayback.current = true; playLocal(); } };
   useEffect(() => {
+    if (phase !== 'connecting' && phase !== 'connected') mediaAnchor.current?.pause();
     if (phase !== 'connected') return;
     const controls = bindMediaSession({
       play: () => { wantsPlayback.current = true; if (peer.current?.connectionState === 'connected') playLocal(); else recoverPlayback.current(); },
@@ -223,7 +240,7 @@ export default function App() {
           </div>
           <div className="local-player"><span className={`bars ${listening ? 'active' : ''}`} aria-hidden="true"><i /><i /><i /><i /><i /></span><span>{listening ? '实时音频 · 与房主一起听' : phase === 'connected' ? '音频已连接' : '等待音乐连接'}</span></div>
           <div className="volume-row"><Icon name="volume" size={17} /><label htmlFor="volume">音量</label><input id="volume" type="range" min="0" max="100" value={volume} onChange={e => setVolume(Number(e.target.value))} /><output htmlFor="volume">{volume}%</output></div>
-          <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onVolumeChange={() => { if(audio.current)setVolume(Math.round(audio.current.volume * 100)); }} onError={() => setAudioError('音频暂时不可用，请尝试重新连接。')} />
+          <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => { if (audio.current?.paused) { mediaAnchor.current?.pause(); setPlaying(false); } }} onVolumeChange={() => { if(audio.current)setVolume(Math.round(audio.current.volume * 100)); }} onError={() => { mediaAnchor.current?.pause(); setAudioError('音频暂时不可用，请尝试重新连接。'); }} />
         </div>
         <aside className="room-sidebar"><div className="join-card"><div className="connection-heading"><h2>收听房间</h2><div className={`connection-status ${phase}`} role="status"><span className="dot" />{phaseLabel}</div></div>
           {!isRoom && <p className="empty-room">尚未收到邀请链接</p>}
@@ -233,7 +250,7 @@ export default function App() {
           {(phase === 'connected' || phase === 'error' || phase === 'connecting') && <button className="reconnect-button" onClick={() => start()} aria-label="重新连接" title="重新连接"><Icon name="refresh" size={19} /></button>}</div>
           <div className="room-details"><div><span>房间</span><strong>{roomId ? `# ${roomId.slice(0, 8)}` : '等待邀请'}</strong></div><div><span>人数上限</span><strong>房主 + 1 位听众</strong></div><div><span>音频连接</span><strong>{network}</strong></div><div><span>有效期至</span><strong>{expiry || '—'}</strong></div></div>
           <details className="ice-path"><summary><span>ICE 路径</span><strong>{icePath.summary}</strong></summary><p>{icePath.detail}</p></details>
-          {(audioError || captureError) && <div className="notice" role="status">{audioError || captureError}</div>}
+          {(audioError || captureError || mediaError) && <div className="notice" role="status">{audioError || captureError || mediaError}</div>}
         </div><p className="privacy-note"><Icon name="shield" size={16} /><span>实时收听 · 不保存音频和歌曲历史</span></p></aside>
       </section>
     </main>
